@@ -260,8 +260,6 @@ my.cl <- parallel::makeCluster(n.cores)
 doParallel::registerDoParallel(cl = my.cl)
 
 estResult<-c()
-surgRest<-c()
-
 
 rjags::load.module("glm")
 
