@@ -161,7 +161,7 @@ for (k in 1:nSim){
 ##save data if necessary
 
 #write.csv(NSimData,file="C:/Users/aijun/Desktop/Aijun_Uvic/Joint Model/R code/Jag_Sim/data/NSimData.csv")
-#write.csv(NsurvData,file="file="C:/Users/aijun/Desktop/Aijun_Uvic/Joint Model/R code/Jag_Sim/data/NsurvData.csv")
+#write.csv(NsurvData,file="C:/Users/aijun/Desktop/Aijun_Uvic/Joint Model/R code/Jag_Sim/data/NsurvData.csv")
 
 ##### end of survival data simulation #####################################
 
