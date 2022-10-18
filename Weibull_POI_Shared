@@ -1,0 +1,337 @@
+#date: 2022-10-05
+#by: Aijun Yang
+#joint model on Measurement error
+
+
+#setwd("//SFP.IDIR.BCGOV/U114/AYANG$/Profile/Desktop/Uvic Study/cancerResearch/joint_model/R code/Jag")
+
+library(tidyverse);#library(R2jags);
+library(rjags)
+library(mcmcplots);
+library(coda);library(MASS)
+library(simsurv);library(survival);library(simex)
+library(SurvRegCensCov);library(erer)
+library(foreach);library(doParallel)
+
+#install.packages("foreach");install.packages("doParallel")
+set.seed(101)
+
+##my.it<-1e5
+##set to 1e4 to test, normal run needs 1e5
+my.it<-1e4
+Dlta<-0.0001 ##used in log(avg(density+Dlta))
+
+nbio<-2;rep=2;n<-200 #subjects
+#normal set nSim to >=100
+nSim<-10
+
+###baseline info--for survival data
+age<-round(rnorm(n,50,10))
+agegt60<-ifelse(age>=60,1,0)
+figo.stage<-rbinom(n,1,0.5)  ##figoStage 1=III/IV 0=I/II
+resDis<-rbinom(n,1,0.5)   ##residual disease 1=yes 0=No
+
+
+##set true para;
+
+tau<-c(1,0.8) ##for two bio-marker TMA effect;
+mu.0<-c(0.4,0.6);##mean of logD
+sig1<-1;sig12<-0.1;sig2<-1.6; ##SIGMA var matrix of logD
+
+##para for weibull surv reg
+lam<-1;gam<-4;ageb<-0.8;figob<-1;resb<-0.90;bioB<-c(1.5,-1)
+
+#matrix for area of each patient per core
+##in real data, these are given
+A<-matrix(data=rep(1,rep*n),nrow=n,ncol=rep)
+
+##TMA assignment
+B<- rbinom(n, 1, 0.5)  ##TMA 0=A 1=B
+
+B1<-cbind(tau[1]*B,tau[2]*B)
+
+##covariance matrix for logD
+
+R.0<-matrix(c(sig1,sig12,sig12,sig2),2, 2) 
+sig.init<-solve(R.0)  ##in case the MCMC initial use the true para
+
+###for now use the same seed for logD for multiple sets of simulated data
+
+logD<-mvrnorm(n, mu = mu.0, Sigma = R.0)
+lambda<-exp(logD+B1)
+
+##covariates used in survsim
+cov.x<-data.frame(agegt60=agegt60,figo.stage=figo.stage,resDis=resDis,bio1=logD[,1],bio2=logD[,2])
+
+##covaraite used in Bayesian, add intercept and remove two bio-marker (will be replaced by estimates of mean of logD)
+cov.x0<-cbind(rep(1,n),cov.x[,1:3])
+
+##compute the mean logDensity, this function can be simplified by using lapply
+rowm = function(x){
+  x = as.data.frame(x)
+  u = unique(x$idx) 
+  r = rep(NA, ncol(x)*length(u))
+  tempDF = matrix(r, ncol=ncol(x))
+  counter=0
+  for(i in u){
+    counter = counter+1
+    tempDF[counter, ] = colSums(x[x$idx==i, ], )
+  }
+  colnames(tempDF) = colnames(x)
+  return(tempDF)}
+
+############Part 1: simulate replicate on bio-marker measurement###############
+sim<-function(k,B,A,lambda){
+  
+  ydat<-matrix(NA,ncol=nbio,nrow=n)
+  t.mu<-matrix(NA,ncol=nbio,nrow=n)
+  id<-seq(1,n)
+  
+  for (i in 1:n){
+    y<-c()
+    mu_<-c()
+    for (j in 1:nbio){
+      y<-cbind(y,rpois(n=1,lambda = lambda[i,j]*A[i,k]))
+      mu_<-cbind(mu_,lambda[i,j]*A[i,k])
+    }
+    ydat[i,]<-y
+    t.mu[i,]<-mu_
+  }
+  
+  my.simdata<-data.frame(rep=k,idx=id,ydat,B=B,A=A[,k],poi.mu=t.mu)
+  return (my.simdata)
+}
+
+for (k in 1:nSim){
+  set.seed(100+k)
+  simdata<-c()
+  
+  for (si in 1:rep){
+     my.sim<-sim(si,B,A,lambda)
+     simdata<-rbind(simdata,my.sim)
+  }
+
+  ##order by idx--subject ID
+  simdata<-simdata[order(simdata$idx),]
+  
+  temdata<-subset(simdata,select=c("idx","X1","X2","A"))
+  
+  totBio<-rowm(temdata)
+  mlogD<-matrix(NA,ncol=nbio,nrow=n)
+  
+  for (i in 1:n){
+    mlogD[i,1:nbio]<-totBio[i,2:(1+nbio)]/totBio[i,(2+nbio)]###columns in temdata x1, x2 and A
+  }
+  mlogD_1<-log(mlogD+Dlta)
+  simdata$mlogD.1<-mlogD_1[,1]
+  simdata$mlogD.2<-mlogD_1[,2]
+  if (k==1){
+    NSimData<-data.frame(simseq=k,simdata)
+  }
+  else{NSimData<-rbind(NSimData,data.frame(simseq=k,simdata))}
+}
+
+#####end of simulation #################################
+
+##simulate the survival data
+#https://cran.r-project.org/web/packages/simsurv/vignettes/simsurv_usage.html
+#https://cran.r-project.org/web/packages/simsurv/vignettes/simsurv_technical.html
+
+#maxt=c(4.29,6.8,12.6,22.5)
+for (k in 1:nSim){
+  maxt=15  ##can change maxt to get different censoring rates
+  survdata<-simsurv(
+    dist = "weibull",
+    lambdas=lam,
+    gammas=gam,
+    x=cov.x,
+    betas=c(agegt60=ageb,figo.stage=figob,resDis=resb,bio1=bioB[1],bio2=bioB[2]),
+    nodes = 11,
+    maxt = maxt,
+    seed = 100+k,
+  )
+  cenPer<-1-sum(survdata$status)/n
+  
+  if (k==1){
+    NsurvData<-data.frame(simseq=k,censorRate=cenPer,survdata)
+  }
+  else {NsurvData<-rbind(NsurvData,data.frame(simseq=k,censorRate=cenPer,survdata))}
+}
+
+##save data if necessary
+
+#write.csv(NSimData,file="C:/Users/aijun/Desktop/Aijun_Uvic/Joint Model/R code/Jag_Sim/data/NSimData.csv")
+#write.csv(NsurvData,file="file="C:/Users/aijun/Desktop/Aijun_Uvic/Joint Model/R code/Jag_Sim/data/NsurvData.csv")
+
+##### end of survival data simulation #####################################
+
+
+###Part 2: joint modeling in jags ###################################
+####Bayesian modeling in Jags##########################################
+
+modelString = "
+model {
+   ##likelihood
+    for( i in 1:N ) {
+         for(h in 1:nbio){
+          x[i,h] ~ dpois( lambda0[i,h]) 
+          log(lambda0[i,h])<-TMA.b[h]*Z[i]+log(A[i])+U[idx[i],h]
+         }
+    }
+    for (j in 1:n.subj){
+       ###check matrix rjags
+       U[j,1:nbio] ~ dmnorm(mu.d,sigma.inv)
+       
+       is.censored[j] ~ dinterval(time[j],cens[j,1])
+       time[j]~dweib(alpha,lambda[j])
+       lambda[j]<-exp(-mu[j]*alpha)
+      
+       mu[j]<-inprod(beta[],X[j,])+ inprod(bio.b[],U[j,])
+    }
+    
+    ##priors for suvival coeff
+    for (k in 1:Nbeta){
+       beta[k]~dnorm(0,0.01)
+     }
+    for (l in 1:nbio) {
+  
+    ##prior TMA effect coef
+    TMA.b[l] ~ dnorm(0,1)
+    
+    ##prior for bio-marker of survival coef
+    bio.b[l] ~ dnorm(0,1)}
+
+    ##prior for weibull shape
+    alpha ~dunif(0,10)
+    
+    mu.d ~ dmnorm(mu0,mu.sd.prec)
+    mu.sd.prec<-inverse(mu.sd)
+    sigma.inv ~ dwish(R,3)
+    sigma<-inverse(sigma.inv)
+  
+   ##converted para
+    beta.c[1]<-exp(-beta[1]*alpha)
+    beta.c[2:Nbeta]<- -beta[2:Nbeta]*alpha
+    bio.c [1:nbio]<- -bio.b[1:nbio]*alpha
+}
+"
+dosim<-function(sk,niter){
+  
+  survdata<-NsurvData[NsurvData$simseq==sk,]
+  simdata<-NSimData[NSimData$simseq==sk,]
+  
+  cens<-matrix(c(survdata$eventtime,rep(NA,n)),nrow=n,ncol=2)
+  survdata$eventtime[survdata$status==0]<-NA
+  is.censored<-as.numeric(is.na(survdata$eventtime))
+  
+  mydata <-list(x = cbind(simdata$X1,simdata$X2),Z=simdata$B,idx=simdata$idx,A=simdata$A,N=length(simdata$X1),n.subj=n,mu0=rep(0,nbio),mu.sd=diag(nbio),R=diag(nbio),
+                time=survdata$eventtime,cens=cens,X=cov.x0,Nbeta=ncol(cov.x0),nbio=nbio)
+  
+  #parameters <- c("sigma","U","mu.d","TMA.b","beta","bio.b","alpha")
+  
+  ###para converted in MCMC jags code
+  parameters <- c("sigma","mu.d","TMA.b","beta.c","bio.c","alpha")
+  #jags.inits <- list(sigma.inv=sig.init,U=logD,TMA.b=tau,mu.d=mu.0, mu.sd=diag(2), beta=c(0,0.5,1.5,0.9),bio.b=c(-2,0.4), alpha=1.5)
+  #inits=jags.inits
+  
+  jagsModel <- rjags::jags.model(textConnection(modelString), data=mydata,n.chains=3,n.adapt=niter)
+  
+  update(jagsModel, n.iter=niter)
+  
+  codaSamples <- rjags::coda.samples(jagsModel, variable.names=parameters, n.iter=niter, thin=10)
+  para<-summary(codaSamples)$statistics
+  #mcmcplots::denplot(codaSamples, parms = c("TMA.b","sigma","mu.d","beta.c","alpha","bio.c"))
+  temp<-data.frame(simseq=sk,para,para=rownames(para))
+  
+  return(temp)
+  
+}
+
+#########start time ##################################
+progStart=Sys.time()
+
+#create and register cluster
+
+parallel::detectCores()
+
+n.cores <- parallel::detectCores() - 2
+
+my.cl <- parallel::makeCluster(n.cores)
+doParallel::registerDoParallel(cl = my.cl)
+
+estResult<-c()
+surgRest<-c()
+
+
+rjags::load.module("glm")
+
+estResult<-foreach(sk=1:nSim,.combine=rbind) %dopar% {
+  estResult_=dosim(sk,my.it)
+  estResult_
+}
+
+
+########Part 3: Survival analysis: survReg 1) logD 2) log(avg(density)+0.0001)
+
+survRegResult<-c()
+simex_result<-c()
+
+for (sk in 1:nSim){
+
+  survdata<-NsurvData[NsurvData$simseq==sk,]
+  simdata<-NSimData[NSimData$simseq==sk,]
+   survdata_1<-cbind(survdata,cov.x,row.names=NULL)
+
+  weiReg<-WeibullReg(Surv(eventtime,status)~agegt60+figo.stage+resDis+bio1+bio2,data=survdata_1)
+  ##give the survReg with measurement
+  weifit<-survreg(Surv(eventtime,status)~agegt60+figo.stage+resDis+bio1+bio2,data=survdata_1, dist="weibull")
+  coef_weibFit<-summary(weifit)
+  HR_weibFit1<-ConvertWeibull(weifit)
+  
+  cov.x2<-data.frame(agegt60=agegt60,figo.stage=figo.stage,resDis=resDis,bio1=simdata$mlogD.1,bio2=simdata$mlogD.2)
+  survdata_2<-cbind(survdata,cov.x2,row.names=NULL)
+  
+
+  weifit2<-survreg(Surv(eventtime,status)~agegt60+figo.stage+resDis+bio1+bio2,data=survdata_2, dist="weibull")
+  coef_weibFit2<-summary(weifit2)
+  
+  HR_weibFit2<-ConvertWeibull(weifit2)
+  
+  
+  survReg<-data.frame(simseq=sk,para=row.names(HR_weibFit1$vars),est_true=HR_weibFit1$vars[,1],se_true=HR_weibFit1$vars[,2],
+                            est_naive=HR_weibFit2$vars[,1],se_naive=HR_weibFit2$vars[,2],check.names=F)
+  survRegResult<-rbind(survRegResult,survReg)
+  
+  ########SIMEX method #####
+  ##reliability ratio=var(xi)/var(xi*), var(xi)--observed, var(xi*)=var(xi) + var(x_err)
+
+  rel1<-var(logD[,1])/var(simdata$mlogD.1);rel2<-var(logD[,2])/var(simdata$mlogD.2)
+  sd_me1<-sqrt((1-rel1)/rel1)*sd(simdata$mlogD.1)
+  sd_me2<-sqrt((1-rel2)/rel2)*sd(simdata$mlogD.2)
+  
+  model_naiv <- coxph(Surv(eventtime,status)~agegt60+figo.stage+resDis+bio1+bio2, data = survdata_2, robust = TRUE,x=TRUE,model=TRUE)
+
+  summary(model_naiv)
+  (model_simex <- simex(model_naiv, SIMEXvariable = c("bio1","bio2"), measurement.error =cbind(sd_me1, sd_me2),jackknife.estimation="linear",asymptotic = FALSE))
+  para<-(summary(model_simex))$coef
+  simex<-data.frame(simseq=sk,para)
+  simex<-data.frame(simex,para=row.names(simex))
+  simex_result<-rbind(simex_result,simex)
+
+}
+
+######### Save Results
+###beta.c[1]--lambda, alpha--gamma in survReg
+write.csv(estResult,row.names=F,file="C:/Users/aijun/Desktop/Aijun_Uvic/Joint Model/R code/Jag_Sim/output/BayesianResult.csv")
+
+write.csv(survRegResult,row.names=F,file="C:/Users/aijun/Desktop/Aijun_Uvic/Joint Model/R code/Jag_Sim/output/survRegResult.csv")
+
+write.csv(simex_result,row.names=F,file="C:/Users/aijun/Desktop/Aijun_Uvic/Joint Model/R code/Jag_Sim/output/simex_result.csv")
+
+
+progEnd=Sys.time()-progStart
+
+cat("run time \n")
+print(progEnd)
+
+stopCluster(my.cl)
