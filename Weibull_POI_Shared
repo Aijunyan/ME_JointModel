@@ -296,7 +296,7 @@ for (sk in 1:nSim){
   
   ###another way to compute sd_me (https://publichealth.buffalo.edu/content/dam/sphhp/biostatistics/Documents/techreports/UB-Biostatistics-TR0901.pdf)
 
-  temdata.den<-cbind(idx=seq(1,n),log(temdata[,2:(1+nbio)]/temdata[,(2+nbio)]+Dlt))
+  temdata.den<-cbind(idx=seq(1,n),log(temdata[,2:(1+nbio)]/temdata[,(2+nbio)]+Dlta))
   temdata.tb<-data.table(temdata.den)
   head<-temdata.tb %>% group_by(idx) %>%  slice_head(n = 1)
   tail<-temdata.tb %>% group_by(idx) %>%  slice_tail(n = 1)
