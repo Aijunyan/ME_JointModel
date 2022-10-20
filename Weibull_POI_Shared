@@ -1,7 +1,8 @@
 #date: 2022-10-05
 #by: Aijun Yang
 #joint model on Measurement error
-
+#update: modify the method to compute the total by group var
+#add another method to estimate sd_me (assume two measures per subj as using head and tail function
 
 #setwd("//SFP.IDIR.BCGOV/U114/AYANG$/Profile/Desktop/Uvic Study/cancerResearch/joint_model/R code/Jag")
 
@@ -303,8 +304,8 @@ for (sk in 1:nSim){
   S_diff1<-var(head$X1-tail$X1)*(n/(n-1)) ##var(difference of (rep1-rep2))
   S_diff2<-var(head$X2-tail$X2)*(n/(n-1))
 
- sd_me1<-sqrt(S_diff1/2)
- sd_me2<-sqrt(S_diff2/2)
+  sd_me1<-sqrt(S_diff1/2)
+  sd_me2<-sqrt(S_diff2/2)
   
   model_naiv <- coxph(Surv(eventtime,status)~agegt60+figo.stage+resDis+bio1+bio2, data = survdata_2, robust = TRUE,x=TRUE,model=TRUE)
 
