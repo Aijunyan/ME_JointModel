@@ -9,7 +9,7 @@
 library(tidyverse);#library(R2jags);
 library(rjags);library(data.table)
 library(mcmcplots);
-library(coda);library(MASS);library(dplyr)
+library(coda);library(MASS);library(plyr)
 library(simsurv);library(survival);library(simex)
 library(SurvRegCensCov);library(erer)
 library(foreach);library(doParallel)
@@ -104,7 +104,7 @@ for (k in 1:nSim){
   ##compute the mean logDensity, this function can be simplified by using lapply
   temdata<-subset(simdata,select=c("idx","X1","X2","A"))
   
-  totBio<-ddply(temdata, .(idx), colwise(sum))
+  totBio<-as.matrix(ddply(temdata, .(idx), colwise(sum)))
   mlogD<-matrix(NA,ncol=nbio,nrow=n)
   
   for (i in 1:n){
