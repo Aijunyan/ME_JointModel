@@ -99,18 +99,6 @@ for (k in 1:nSim){
   ##order by idx--subject ID
   simdata<-simdata[order(simdata$idx),]
   
-  ##compute the mean logDensity, this function can be simplified by using lapply
-  temdata<-subset(simdata,select=c("idx","X1","X2","A"))
-  
-  totBio<-as.matrix(ddply(temdata, .(idx), colwise(sum)))
-  mlogD<-matrix(NA,ncol=nbio,nrow=n)
-  
-  for (i in 1:n){
-    mlogD[i,1:nbio]<-totBio[i,2:(1+nbio)]/totBio[i,(2+nbio)]###columns in temdata x1, x2 and A
-  }
-  mlogD_1<-log(mlogD+Dlta)
-  simdata$mlogD.1<-mlogD_1[,1]
-  simdata$mlogD.2<-mlogD_1[,2]
   if (k==1){
     NSimData<-data.frame(simseq=k,simdata)
   }
@@ -272,7 +260,18 @@ for (sk in 1:nSim){
   coef_weibFit<-summary(weifit)
   HR_weibFit1<-ConvertWeibull(weifit)
   
-  cov.x2<-data.frame(agegt60=agegt60,figo.stage=figo.stage,resDis=resDis,bio1=simdata$mlogD.1,bio2=simdata$mlogD.2)
+   ##compute the mean logDensity, this function can be simplified by using lapply
+  temdata<-subset(simdata,select=c("idx","X1","X2","A"))
+  
+  totBio<-as.matrix(ddply(temdata, .(idx), colwise(sum)))
+  mlogD<-matrix(NA,ncol=nbio,nrow=n)
+  
+  for (i in 1:n){
+    mlogD[i,1:nbio]<-totBio[i,2:(1+nbio)]/totBio[i,(2+nbio)]###columns in temdata x1, x2 and A
+  }
+  mlogD_1<-log(mlogD+Dlta)
+
+  cov.x2<-data.frame(agegt60=agegt60,figo.stage=figo.stage,resDis=resDis,bio1=mlogD_1[,1],bio2=mlogD_1[,2])
   survdata_2<-cbind(survdata,cov.x2,row.names=NULL)
   
 
@@ -289,9 +288,9 @@ for (sk in 1:nSim){
   ########SIMEX method #####
   ##reliability ratio=var(xi)/var(xi*), var(xi)--observed, var(xi*)=var(xi) + var(x_err)
 
-  rel1<-var(logD[,1])/var(simdata$mlogD.1);rel2<-var(logD[,2])/var(simdata$mlogD.2)
-  sd_me1<-sqrt((1-rel1)/rel1)*sd(simdata$mlogD.1)
-  sd_me2<-sqrt((1-rel2)/rel2)*sd(simdata$mlogD.2)
+  #rel1<-var(logD[,1])/var(mlogD_1[,1]);rel2<-var(logD[,2])/var(mlogD_1[,2])
+  #sd_me1<-sqrt((1-rel1)/rel1)*sd(mlogD_1[,1])
+  #sd_me2<-sqrt((1-rel2)/rel2)*sd(mlogD_1[,2])
   
   ###another way to compute sd_me (https://publichealth.buffalo.edu/content/dam/sphhp/biostatistics/Documents/techreports/UB-Biostatistics-TR0901.pdf)
 
