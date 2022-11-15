@@ -7,7 +7,7 @@
 library(tidyverse);#library(R2jags);
 library(rjags);library(data.table)
 library(mcmcplots);
-library(coda);library(MASS);library(plyr)
+library(coda);library(MASS);library(dplyr);library(plyr)
 library(simsurv);library(survival);library(simex)
 library(SurvRegCensCov);library(erer)
 library(foreach);library(doParallel)
@@ -252,7 +252,7 @@ for (sk in 1:nSim){
 
   survdata<-NsurvData[NsurvData$simseq==sk,]
   simdata<-NSimData[NSimData$simseq==sk,]
-   survdata_1<-cbind(survdata,cov.x,row.names=NULL)
+  survdata_1<-cbind(survdata,cov.x,row.names=NULL)
 
   weiReg<-WeibullReg(Surv(eventtime,status)~agegt60+figo.stage+resDis+bio1+bio2,data=survdata_1)
   ##give the survReg with measurement
