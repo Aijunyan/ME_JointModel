@@ -313,9 +313,9 @@ for (sk in 1:nSim){
   ########SIMEX method #####
   ##reliability ratio=var(xi)/var(xi*), var(xi)--observed, var(xi*)=var(xi) + var(x_err)
 
- #  rel1<-var(bioD[,1])/var(simdata$mD.1);rel2<-var(bioD[,2])/var(simdata$mD.2)
- #  sd_me1<-sqrt((1-rel1)/rel1)*sd(simdata$mD.1)
- #  sd_me2<-sqrt((1-rel2)/rel2)*sd(simdata$mD.2)
+ #  rel1<-var(bioD[,1])/var(mD[,1]);rel2<-var(bioD[,2])/var(mD[,2])
+ #  sd_me1<-sqrt((1-rel1)/rel1)*sd(mD[,1])
+ #  sd_me2<-sqrt((1-rel2)/rel2)*sd(mD[,2])
 
    ###another way to compute sd_me (https://publichealth.buffalo.edu/content/dam/sphhp/biostatistics/Documents/techreports/UB-Biostatistics-TR0901.pdf)   
   temdata.den<-cbind(idx=seq(1,n),(temdata[,2:(1+nbio)]/temdata[,(2+nbio)])^(1/4))
