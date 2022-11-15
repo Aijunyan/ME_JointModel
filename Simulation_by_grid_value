@@ -3,9 +3,6 @@
 #by: Aijun Yang
 #joint model on Measurement error
 
-
-#setwd("//SFP.IDIR.BCGOV/U114/AYANG$/Profile/Desktop/Uvic Study/cancerResearch/joint_model/R code/Jag")
-
 library(tidyverse);#library(R2jags);
 library(rjags);library(data.table)
 library(mcmcplots);
